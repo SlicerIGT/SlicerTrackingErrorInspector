@@ -2,7 +2,9 @@ import os
 import unittest
 from __main__ import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
+import numpy as np
 import logging
+import math
 
 #
 # DualModalityCalibration
@@ -15,18 +17,13 @@ class DualModalityCalibration(ScriptedLoadableModule):
 
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
-    self.parent.title = "DualModalityCalibration" # TODO make this more human readable by adding spaces
-    self.parent.categories = ["Examples"]
+    self.parent.title = "Dual Modality Calibration "
+    self.parent.categories = ["IGT"]
     self.parent.dependencies = []
-    self.parent.contributors = ["John Doe (AnyWare Corp.)"] # replace with "Firstname Lastname (Organization)"
-    self.parent.helpText = """
-    This is an example of scripted loadable module bundled in an extension.
-    It performs a simple thresholding on the input volume and optionally captures a screenshot.
-    """
-    self.parent.acknowledgementText = """
-    This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc.
-    and Steve Pieper, Isomics, Inc. and was partially funded by NIH grant 3P41RR013218-12S1.
-""" # replace with organization, grant and thanks.
+    self.parent.contributors = ["Vinyas Harish, Andras Lasso (PerkLab, Queen's)"]
+    self.parent.helpText = "This is a simple example of how to calibrate two tracking systems for use in mapping position tracking error."
+    self.parent = parent
+    #self.logic = DualModalityCalibrationLogic
 
 #
 # DualModalityCalibrationWidget
@@ -39,98 +36,225 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
 
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
+    self.developerMode = True
+    self.logic = DualModalityCalibrationLogic()
 
-    # Instantiate and connect widgets ...
+    # Instantiate and connect widgets
 
     #
-    # Parameters Area
+    # Calibration Parameters Area
     #
     parametersCollapsibleButton = ctk.ctkCollapsibleButton()
-    parametersCollapsibleButton.text = "Parameters"
+    parametersCollapsibleButton.text = "Calibration input and output transforms"
     self.layout.addWidget(parametersCollapsibleButton)
 
     # Layout within the dummy collapsible button
     parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
 
     #
-    # input volume selector
+    # Optical tracking system transform selector
     #
-    self.inputSelector = slicer.qMRMLNodeComboBox()
-    self.inputSelector.nodeTypes = ["vtkMRMLScalarVolumeNode"]
-    self.inputSelector.selectNodeUponCreation = True
-    self.inputSelector.addEnabled = False
-    self.inputSelector.removeEnabled = False
-    self.inputSelector.noneEnabled = False
-    self.inputSelector.showHidden = False
-    self.inputSelector.showChildNodeTypes = False
-    self.inputSelector.setMRMLScene( slicer.mrmlScene )
-    self.inputSelector.setToolTip( "Pick the input to the algorithm." )
-    parametersFormLayout.addRow("Input Volume: ", self.inputSelector)
+    self.opticalPointerSelectorLabel = qt.QLabel()
+    self.opticalPointerSelectorLabel.setText( "OpPointerToOpRef Transform: " )
+    self.opticalPointerSelector = slicer.qMRMLNodeComboBox()
+    self.opticalPointerSelector.nodeTypes = ( ["vtkMRMLLinearTransformNode"] )
+    self.opticalPointerSelector.noneEnabled = False
+    self.opticalPointerSelector.addEnabled = False
+    self.opticalPointerSelector.removeEnabled = True
+    self.opticalPointerSelector.setMRMLScene( slicer.mrmlScene )
+    self.opticalPointerSelector.setToolTip( "Pick a known transform corresponding to the optical pointer's coordinate frame" )
+    parametersFormLayout.addRow(self.opticalPointerSelectorLabel, self.opticalPointerSelector)
 
     #
-    # output volume selector
+    # Em tracking system transform selector
     #
-    self.outputSelector = slicer.qMRMLNodeComboBox()
-    self.outputSelector.nodeTypes = ["vtkMRMLScalarVolumeNode"]
-    self.outputSelector.selectNodeUponCreation = True
-    self.outputSelector.addEnabled = True
-    self.outputSelector.removeEnabled = True
-    self.outputSelector.noneEnabled = True
-    self.outputSelector.showHidden = False
-    self.outputSelector.showChildNodeTypes = False
-    self.outputSelector.setMRMLScene( slicer.mrmlScene )
-    self.outputSelector.setToolTip( "Pick the output to the algorithm." )
-    parametersFormLayout.addRow("Output Volume: ", self.outputSelector)
+    self.EmPointerSelectorLabel = qt.QLabel()
+    self.EmPointerSelectorLabel.setText( "EmPointerToEmTracker Transform: " )
+    self.emPointerSelector = slicer.qMRMLNodeComboBox()
+    self.emPointerSelector.nodeTypes = ( ["vtkMRMLTransformNode"] )
+    self.emPointerSelector.noneEnabled = False
+    self.emPointerSelector.addEnabled = False
+    self.emPointerSelector.removeEnabled = True
+    self.emPointerSelector.setMRMLScene( slicer.mrmlScene )
+    self.emPointerSelector.setToolTip( "Pick a known transform corresponding to the Em pointer's coordinate frame" )
+    parametersFormLayout.addRow(self.EmPointerSelectorLabel, self.emPointerSelector)
 
     #
-    # threshold value
+    # Initial landmark registration result transform selector
     #
-    self.imageThresholdSliderWidget = ctk.ctkSliderWidget()
-    self.imageThresholdSliderWidget.singleStep = 0.1
-    self.imageThresholdSliderWidget.minimum = -100
-    self.imageThresholdSliderWidget.maximum = 100
-    self.imageThresholdSliderWidget.value = 0.5
-    self.imageThresholdSliderWidget.setToolTip("Set threshold value for computing the output image. Voxels that have intensities lower than this value will set to zero.")
-    parametersFormLayout.addRow("Image threshold", self.imageThresholdSliderWidget)
+    self.initialEmTrackerToOpRefSelectorLabel = qt.QLabel()
+    self.initialEmTrackerToOpRefSelectorLabel.setText( "Initial EmTrackerToOpRef Transform: " )
+    self.initialEmTrackerToOpRefSelector = slicer.qMRMLNodeComboBox()
+    self.initialEmTrackerToOpRefSelector.nodeTypes = ( ["vtkMRMLTransformNode"] )
+    self.initialEmTrackerToOpRefSelector.noneEnabled = False
+    self.initialEmTrackerToOpRefSelector.addEnabled = True
+    self.initialEmTrackerToOpRefSelector.removeEnabled = True
+    self.initialEmTrackerToOpRefSelector.baseName = "EmTrackerToOpRefInitial"
+    self.initialEmTrackerToOpRefSelector.setMRMLScene( slicer.mrmlScene )
+    self.initialEmTrackerToOpRefSelector.setToolTip( "Pick a known transform corresponding to the Em pointer's coordinate frame" )
+    parametersFormLayout.addRow(self.initialEmTrackerToOpRefSelectorLabel, self.initialEmTrackerToOpRefSelector)
+
+    self.outputEmTrackerToOpRefTransformSelectorLabel = qt.QLabel("Output EmTrackerToOpRef transform: ")
+    self.outputEmTrackerToOpRefTransformSelector = slicer.qMRMLNodeComboBox()
+    self.outputEmTrackerToOpRefTransformSelector.nodeTypes = ( ["vtkMRMLTransformNode"] )
+    self.outputEmTrackerToOpRefTransformSelector.noneEnabled = True
+    self.outputEmTrackerToOpRefTransformSelector.addEnabled = True
+    self.outputEmTrackerToOpRefTransformSelector.removeEnabled = True
+    self.outputEmTrackerToOpRefTransformSelector.baseName = "EmTrackerToOpRef"
+    self.outputEmTrackerToOpRefTransformSelector.setMRMLScene( slicer.mrmlScene )
+    self.outputEmTrackerToOpRefTransformSelector.setToolTip("Select the transform to output the EmTrackerToOpRef calibration result to")
+    parametersFormLayout.addRow(self.outputEmTrackerToOpRefTransformSelectorLabel, self.outputEmTrackerToOpRefTransformSelector)
+
+    self.outputEmPointerGtruthToOpPointerTransformSelectorLabel = qt.QLabel("Output EmPointerGtruthToOpPointer transform: ")
+    self.outputEmPointerGtruthToOpPointerTransformSelector = slicer.qMRMLNodeComboBox()
+    self.outputEmPointerGtruthToOpPointerTransformSelector.nodeTypes = ( ["vtkMRMLTransformNode"] )
+    self.outputEmPointerGtruthToOpPointerTransformSelector.noneEnabled = True
+    self.outputEmPointerGtruthToOpPointerTransformSelector.addEnabled = True
+    self.outputEmPointerGtruthToOpPointerTransformSelector.removeEnabled = True
+    self.outputEmPointerGtruthToOpPointerTransformSelector.baseName = "EmPointerGtruthToOpPointer"
+    self.outputEmPointerGtruthToOpPointerTransformSelector.setMRMLScene( slicer.mrmlScene )
+    self.outputEmPointerGtruthToOpPointerTransformSelector.setToolTip("Select the transform to output the EmPointerGtruthToOpPointer calibration result to")
+    parametersFormLayout.addRow(self.outputEmPointerGtruthToOpPointerTransformSelectorLabel, self.outputEmPointerGtruthToOpPointerTransformSelector)
+
+    # Select defaults (to make debugging easier)
+    opPointerToOpRefNode = slicer.util.getNode('OpPointerToOpRef')
+    if opPointerToOpRefNode:
+        self.opticalPointerSelector.setCurrentNode(opPointerToOpRefNode)
+    emPointerToEmTrackerNode = slicer.util.getNode('EmPointerToEmTracker')
+    if emPointerToEmTrackerNode:
+        self.emPointerSelector.setCurrentNode(emPointerToEmTrackerNode)
+    emTrackerToOpRefInitialNode = slicer.util.getNode('EmTrackerToOpRefInitial')
+    if emTrackerToOpRefInitialNode:
+        self.initialEmTrackerToOpRefSelector.setCurrentNode(emTrackerToOpRefInitialNode)
+    emTrackerToOpRefOutputNode = slicer.util.getNode('EmTrackerToOpRef')
+    if emTrackerToOpRefOutputNode:
+        self.outputEmTrackerToOpRefTransformSelector.setCurrentNode(emTrackerToOpRefOutputNode)
+    emPointerGtruthToOpPointerOutputNode = slicer.util.getNode('EmPointerGtruthToOpPointer')
+    if emPointerGtruthToOpPointerOutputNode:
+        self.outputEmPointerGtruthToOpPointerTransformSelector.setCurrentNode(emPointerGtruthToOpPointerOutputNode)
+        
+    #
+    # Controls Area
+    #
+    controlsCollapsibleButton = ctk.ctkCollapsibleButton()
+    controlsCollapsibleButton.text = "Controls"
+    self.layout.addWidget(controlsCollapsibleButton)
+
+    # Layout within the dummy collapsible button
+    controlsFormLayout = qt.QFormLayout(controlsCollapsibleButton)
 
     #
-    # check box to trigger taking screen shots for later use in tutorials
+    # Number of data points to be collected input
     #
-    self.enableScreenshotsFlagCheckBox = qt.QCheckBox()
-    self.enableScreenshotsFlagCheckBox.checked = 0
-    self.enableScreenshotsFlagCheckBox.setToolTip("If checked, take screen shots for tutorials. Use Save Data to write them to disk.")
-    parametersFormLayout.addRow("Enable Screenshots", self.enableScreenshotsFlagCheckBox)
+
+    self.numberDataPointsInputLabel = qt.QLabel()
+    self.numberDataPointsInputLabel.setText("Number of Collected Data Points:")
+    self.numberDataPointsInput = qt.QSpinBox()
+    self.numberDataPointsInput.maximum = 5000
+    self.numberDataPointsInput.minimum = 10
+    self.numberDataPointsInputLabel.setToolTip("Select how many sample points will be used in calculations")
+    controlsFormLayout.addRow(self.numberDataPointsInputLabel, self.numberDataPointsInput)
+    #self.numberDataPoints = self.numberDataPointsInput.value
 
     #
-    # Apply Button
+    # Delay slider
     #
-    self.applyButton = qt.QPushButton("Apply")
-    self.applyButton.toolTip = "Run the algorithm."
-    self.applyButton.enabled = False
-    parametersFormLayout.addRow(self.applyButton)
+    self.delaySelectorLabel = qt.QLabel()
+    self.delaySelectorLabel.setText("Delay (seconds):")
+    self.delaySelector = qt.QSpinBox()
+    self.delaySelector.minimum = 1
+    self.delaySelector.maximum = 10
+    self.delaySelector.setToolTip("Time to wait before starting data collection after clicking 'Start data collection' button")
+    controlsFormLayout.addRow(self.delaySelectorLabel, self.delaySelector)
 
-    # connections
-    self.applyButton.connect('clicked(bool)', self.onApplyButton)
-    self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-    self.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    #
+    # Start data collection button
+    #
+    self.startButton = qt.QPushButton("Start data collection")
+    self.startButton.toolTip = "Start collecting data that will be used in calculations"
+    self.startButton.enabled = True
+    self.startButton.connect('clicked(bool)',self.onStartDataCollection)
+    controlsFormLayout.addRow(self.startButton)
+
+    #
+    # Delay countdown timer
+    #
+    self.delayTimerLabel = qt.QLabel()
+    self.delayTimerLabel.setText("Time before data collection begins:  ____ seconds")
+    controlsFormLayout.addRow(self.delayTimerLabel)
+
+    #
+    # Data collection progress bar
+    #
+    self.collectionProgressBar = qt.QProgressBar()
+    self.collectionProgressBar.setRange(0,100)
+    #self.collectionProgressBarLabel = qt.QLabel()
+    #self.collectionProgressBarLabel.setText("__% complete")
+    #controlsFormLayout.addRow(self.collectionProgressBarLabel, self.collectionProgressBar)
+    controlsFormLayout.addRow(self.collectionProgressBar)
+
+    #
+    # Display Area
+    #
+    displayCollapsibleButton = ctk.ctkCollapsibleButton()
+    displayCollapsibleButton.text = "Calibration results"
+    self.layout.addWidget(displayCollapsibleButton)
+
+    # Layout within the dummy collapsible button
+    displayFormLayout = qt.QFormLayout(displayCollapsibleButton)
+
+    #
+    # Error metrics
+    #
+    self.transErrorLabel = qt.QLabel("Position error: N/A")
+    self.rotErrorLabel = qt.QLabel("Orientation error: N/A")
+    displayFormLayout.addRow(self.transErrorLabel, self.rotErrorLabel)
+    #
+    # Save results to config file
+    #
+    self.filenameLabel = qt.QLabel()
+    self.filenameLabel.setText("Filename: ")
+    self.filenameInput = qt.QLineEdit()
+    self.filenameInput.placeholderText = ""
+    self.filenameInput.setToolTip("Select the config flie to save to")
+    self.writeConfigButton = qt.QPushButton("Write to PLUS config file")
+    self.writeConfigButton.toolTip = "Save output transforms to PLUS config file"
+    self.writeConfigButton.enabled = True
+    displayFormLayout.addRow(self.filenameLabel, self.filenameInput)
+    displayFormLayout.addRow(self.writeConfigButton)
 
     # Add vertical spacer
     self.layout.addStretch(1)
 
-    # Refresh Apply button state
-    self.onSelect()
+  def logicStatusCallback(self, statusCode, percentageCompleted):
+    """This method is called by the logic to report progress"""
+    
+    if statusCode == self.logic.CALIBRATION_COMPLETE:
+      self.transErrorLabel.setText("Position error: {0:.3f} mm".format(self.logic.calibrationErrorTranslationMm))
+      self.rotErrorLabel.setText("Orientation error: {0:.3f} deg".format(self.logic.calibrationErrorRotationDeg))
+    else:
+      self.transErrorLabel.setText("Position error: N/A")
+      self.rotErrorLabel.setText("Orientation error: N/A")
+      
+    if statusCode == self.logic.CALIBRATION_COMPLETE:
+      self.collectionProgressBar.setValue(100)
+    elif statusCode == self.logic.CALIBRATION_IN_PROGRESS:
+      self.collectionProgressBar.setValue(percentageCompleted)
+    else:
+      self.collectionProgressBar.setValue(0)
+      
+    # Refresh the screen
+    slicer.app.processEvents()
+    
+  def onStartDataCollection(self, moduleName="DualModalityCalibration"):
+    logging.debug("onStartDataCollection")
+    self.logic.statusCallback = self.logicStatusCallback
+    self.logic.startDataCollection(self.numberDataPointsInput.value, self.emPointerSelector.currentNode(),self.opticalPointerSelector.currentNode(), \
+     self.initialEmTrackerToOpRefSelector.currentNode(),self.outputEmTrackerToOpRefTransformSelector.currentNode() ,self.outputEmPointerGtruthToOpPointerTransformSelector.currentNode())
 
   def cleanup(self):
-    pass
-
-  def onSelect(self):
-    self.applyButton.enabled = self.inputSelector.currentNode() and self.outputSelector.currentNode()
-
-  def onApplyButton(self):
-    logic = DualModalityCalibrationLogic()
-    enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
-    imageThreshold = self.imageThresholdSliderWidget.value
-    logic.run(self.inputSelector.currentNode(), self.outputSelector.currentNode(), imageThreshold, enableScreenshotsFlag)
+    logging.debug("DualModalityCalibration cleanup")
+    self.logic.removeObservers()
 
 #
 # DualModalityCalibrationLogic
@@ -146,93 +270,350 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
-  def hasImageData(self,volumeNode):
-    """This is an example logic method that
-    returns true if the passed in volume
-    node has valid image data
+  def __init__(self):
+
+     # Observed transform nodes
+     self.opPointerToOpRefNode = None
+     self.emPointerToEmTrackerNode = None
+     self.transformNodeObserverTags = []
+
+     # Input parameters
+     self.initialEmTrackerToOpRefTransform = None
+     self.numberOfDataPointsToCollect = 20
+
+     # Collected data
+     self.numberDataPointsCollected = 0
+     self.opPointerToOpRefTransformArray = np.zeros((0,4,4))
+     self.emPointerToEmTrackerTransformArray = np.zeros((0,4,4))
+     self.lastUpdateTimeSec = 0
+
+     # Output
+     self.emPointerToOpPointer = None
+     
+     self.calibrationErrorTranslationMm = None
+     self.calibrationErrorRotationDeg = None
+     
+     self.statusCallback = None
+     self.CALIBRATION_NOT_STARTED = 0
+     self.CALIBRATION_IN_PROGRESS = 1
+     self.CALIBRATION_COMPLETE = 2
+
+  def addObservers(self):
+      transformModifiedEvent = slicer.vtkMRMLLinearTransformNode.TransformModifiedEvent
+      transformNode = self.opPointerToOpRefNode
+      while transformNode:
+          logging.debug("Add observer to {0}".format(transformNode.GetName()))
+          self.transformNodeObserverTags.append([transformNode, transformNode.AddObserver(transformModifiedEvent, self.onOpticalTransformNodeModified)])
+          transformNode = transformNode.GetParentTransformNode()
+
+  def removeObservers(self):
+      logging.debug("Removing observers")
+      for nodeTagPair in self.transformNodeObserverTags:
+          nodeTagPair[0].RemoveObserver(nodeTagPair[1])
+
+  def arrayFromVtkMatrix(self, vtkMatrix):
+      npArray = np.zeros((4,4))
+      for row in range(4):
+        for column in range(4):
+            npArray[row][column] = vtkMatrix.GetElement(row,column)
+      return npArray
+
+  def vtkMatrixFromArray(self, array):
+      aVTKMatrix = vtk.vtkMatrix4x4()
+      for row in range(4):
+          for column in range(4):
+              aVTKMatrix.SetElement(row,column, array[row][column])
+      return aVTKMatrix
+
+  def reportStatus(self, statusCode, percentageCompleted):
+    if self.statusCallback:
+      self.statusCallback(statusCode, percentageCompleted)
+      
+  def startDataCollection(self, numberOfDataPointsToCollect, emPointerToEmTrackerNode, opPointerToOpRefNode, initialEmTrackerToOpRefTransformNode, \
+  emTrackerToOpRefNode, emPointerToOpPointerNode):
+      self.removeObservers()
+
+      self.opPointerToOpRefNode = opPointerToOpRefNode
+      self.emPointerToEmTrackerNode = emPointerToEmTrackerNode
+      self.numberOfDataPointsToCollect = numberOfDataPointsToCollect
+
+      self.outputEmTrackerToOpRefNode = emTrackerToOpRefNode
+      self.outputEmPointerToOpPointerNode = emPointerToOpPointerNode
+
+      initialEmTrackerToOpRefVtkMatrix = vtk.vtkMatrix4x4()
+      initialEmTrackerToOpRefTransformNode.GetMatrixTransformToParent(initialEmTrackerToOpRefVtkMatrix)
+      self.initialEmTrackerToOpRefTransform = self.arrayFromVtkMatrix(initialEmTrackerToOpRefVtkMatrix)
+      logging.debug("initialEmTrackerToOpRefTransformNode = {0}".format(self.initialEmTrackerToOpRefTransform))
+
+      self.numberDataPointsCollected = 0
+      self.opPointerToOpRefTransformArray = np.zeros((self.numberOfDataPointsToCollect,4,4))
+      self.emPointerToEmTrackerTransformArray = np.zeros((self.numberOfDataPointsToCollect,4,4))
+
+      self.addObservers()
+      
+      self.reportStatus(self.CALIBRATION_IN_PROGRESS,0)
+
+  #Since optical tracking is our ground truth we only want to query both transform nodes when the optical node is changing
+  def onOpticalTransformNodeModified(self,observer,eventid):
+
+      minimumTimeBetweenUpdatesSec = 0.1
+      currentTimeSec = vtk.vtkTimerLog.GetUniversalTime()
+      if (currentTimeSec<self.lastUpdateTimeSec+minimumTimeBetweenUpdatesSec):
+        # too close to last update
+        return
+
+      self.lastUpdateTimeSec = currentTimeSec
+
+      # Check to ensure you do not overstep the bounds of the array, if done creating arrays, start calculations
+      if self.numberDataPointsCollected >= self.numberOfDataPointsToCollect:
+          logging.debug("Finished data collection")
+          self.removeObservers()
+          self.calculateCalibrationOutput()
+          return
+
+      # Store the two transform matrices into their corresponding arrays for calculations
+
+      opPointerToOpRefVtkMatrix = vtk.vtkMatrix4x4()
+      self.opPointerToOpRefNode.GetMatrixTransformToParent(opPointerToOpRefVtkMatrix)
+      self.opPointerToOpRefTransformArray[self.numberDataPointsCollected] = self.arrayFromVtkMatrix(opPointerToOpRefVtkMatrix)
+
+      emPointerToEmTrackerVtkMatrix = vtk.vtkMatrix4x4()
+      self.emPointerToEmTrackerNode.GetMatrixTransformToParent(emPointerToEmTrackerVtkMatrix)
+      self.emPointerToEmTrackerTransformArray[self.numberDataPointsCollected] = self.arrayFromVtkMatrix(emPointerToEmTrackerVtkMatrix)
+
+      self.numberDataPointsCollected = self.numberDataPointsCollected + 1
+      
+      if self.numberDataPointsCollected % 10 == 0: # report status after every 10th point to avoid too frequent screen updates
+        self.reportStatus(self.CALIBRATION_IN_PROGRESS,100*self.numberDataPointsCollected/self.numberOfDataPointsToCollect)
+
+  def orthonormalize(self, a):
+      a_ortho = np.identity(4)
+
+      aRot = a[0:3,0:3]
+      u, s, v = np.linalg.svd(aRot, full_matrices=1, compute_uv=1)
+      aRot_ortho = np.dot(u,v) # v is transpose of the usual v (for example v in Matlab)
+      a_ortho[0:3,0:3] = aRot_ortho
+
+      a_ortho[0:3,3] = a[0:3,3]
+      return a_ortho
+
+  def orthonormalize3x3(self, a):
+    u, s, v = np.linalg.svd(a, full_matrices=1, compute_uv=1)
+    a_ortho = np.dot(u,v) # v is transpose of the usual v (for example v in Matlab)
+    return a_ortho
+
+  # Source: http://www.lfd.uci.edu/~gohlke/code/transformations.py.html
+  def rotation_from_matrix(self, matrix):
+    """Return rotation angle and axis from rotation matrix.
+
+    >>> angle = (random.random() - 0.5) * (2*math.pi)
+    >>> direc = numpy.random.random(3) - 0.5
+    >>> point = numpy.random.random(3) - 0.5
+    >>> R0 = rotation_matrix(angle, direc, point)
+    >>> angle, direc, point = rotation_from_matrix(R0)
+    >>> R1 = rotation_matrix(angle, direc, point)
+    >>> is_same_transform(R0, R1)
+    True
+
     """
-    if not volumeNode:
-      logging.debug('hasImageData failed: no volume node')
-      return False
-    if volumeNode.GetImageData() == None:
-      logging.debug('hasImageData failed: no image data in volume node')
-      return False
-    return True
-
-  def isValidInputOutputData(self, inputVolumeNode, outputVolumeNode):
-    """Validates if the output is not the same as input
-    """
-    if not inputVolumeNode:
-      logging.debug('isValidInputOutputData failed: no input volume node defined')
-      return False
-    if not outputVolumeNode:
-      logging.debug('isValidInputOutputData failed: no output volume node defined')
-      return False
-    if inputVolumeNode.GetID()==outputVolumeNode.GetID():
-      logging.debug('isValidInputOutputData failed: input and output volume is the same. Create a new volume for output to avoid this error.')
-      return False
-    return True
-
-  def takeScreenshot(self,name,description,type=-1):
-    # show the message even if not taking a screen shot
-    slicer.util.delayDisplay('Take screenshot: '+description+'.\nResult is available in the Annotations module.', 3000)
-
-    lm = slicer.app.layoutManager()
-    # switch on the type to get the requested window
-    widget = 0
-    if type == slicer.qMRMLScreenShotDialog.FullLayout:
-      # full layout
-      widget = lm.viewport()
-    elif type == slicer.qMRMLScreenShotDialog.ThreeD:
-      # just the 3D window
-      widget = lm.threeDWidget(0).threeDView()
-    elif type == slicer.qMRMLScreenShotDialog.Red:
-      # red slice window
-      widget = lm.sliceWidget("Red")
-    elif type == slicer.qMRMLScreenShotDialog.Yellow:
-      # yellow slice window
-      widget = lm.sliceWidget("Yellow")
-    elif type == slicer.qMRMLScreenShotDialog.Green:
-      # green slice window
-      widget = lm.sliceWidget("Green")
+    import numpy
+    R = numpy.array(matrix, dtype=numpy.float64, copy=False)
+    R33 = R[:3, :3]
+    # direction: unit eigenvector of R33 corresponding to eigenvalue of 1
+    w, W = numpy.linalg.eig(R33.T)
+    i = numpy.where(abs(numpy.real(w) - 1.0) < 1e-8)[0]
+    if not len(i):
+        raise ValueError("no unit eigenvector corresponding to eigenvalue 1")
+    direction = numpy.real(W[:, i[-1]]).squeeze()
+    # point: unit eigenvector of R33 corresponding to eigenvalue of 1
+    w, Q = numpy.linalg.eig(R)
+    i = numpy.where(abs(numpy.real(w) - 1.0) < 1e-8)[0]
+    if not len(i):
+        raise ValueError("no unit eigenvector corresponding to eigenvalue 1")
+    point = numpy.real(Q[:, i[-1]]).squeeze()
+    point /= point[3]
+    # rotation angle depending on direction
+    cosa = (numpy.trace(R33) - 1.0) / 2.0
+    if abs(direction[2]) > 1e-8:
+        sina = (R[1, 0] + (cosa-1.0)*direction[0]*direction[1]) / direction[2]
+    elif abs(direction[1]) > 1e-8:
+        sina = (R[0, 2] + (cosa-1.0)*direction[0]*direction[2]) / direction[1]
     else:
-      # default to using the full window
-      widget = slicer.util.mainWindow()
-      # reset the type so that the node is set correctly
-      type = slicer.qMRMLScreenShotDialog.FullLayout
+        sina = (R[2, 1] + (cosa-1.0)*direction[1]*direction[2]) / direction[0]
+    angle = math.atan2(sina, cosa)
+    return angle, direction, point
 
-    # grab and convert to vtk image data
-    qpixMap = qt.QPixmap().grabWidget(widget)
-    qimage = qpixMap.toImage()
-    imageData = vtk.vtkImageData()
-    slicer.qMRMLUtils().qImageToVtkImageData(qimage,imageData)
+  def calculateCalibrationError(self, opPointerToEmPointer, opRefToEmTracker):
+    # OpRefToEmTracker * OpPointerToOpRef = EmPointerToEmTracker * OpPointerToEmPointer
+    # ErrorMatrix = OpRefToEmTracker * OpPointerToOpRef * inv(EmPointerToEmTracker * OpPointerToEmPointer)
 
-    annotationLogic = slicer.modules.annotations.logic()
-    annotationLogic.CreateSnapShot(name, description, type, 1, imageData)
+    numberOfTransforms = np.shape(self.opPointerToOpRefTransformArray)[0]
+    positionErrorMm = np.zeros(numberOfTransforms)
+    angleErrorDeg = np.zeros(numberOfTransforms)
+    for transformIndex in range(numberOfTransforms):
+        opPointerToEmTrackerFromOp = np.dot(opRefToEmTracker, self.opPointerToOpRefTransformArray[transformIndex])
+        opPointerToEmTrackerFromEm = np.dot(self.emPointerToEmTrackerTransformArray[transformIndex], opPointerToEmPointer)
+        errorMatrix = np.dot(opPointerToEmTrackerFromOp, np.linalg.inv(opPointerToEmTrackerFromEm))
+        errorMatrix = self.orthonormalize(errorMatrix)
+        positionErrorMm[transformIndex] = np.linalg.norm(errorMatrix[0:3,3])
+        try:
+          angle, direc, point = self.rotation_from_matrix(errorMatrix)
+        except ValueError:
+          loggin.warning("Invalid errorMatrix: "+repr(errorMatrix))
+          angle = math.pi
+        angleErrorDeg[transformIndex] = abs(angle) * 180/math.pi
 
-  def run(self, inputVolume, outputVolume, imageThreshold, enableScreenshots=0):
-    """
-    Run the actual algorithm
-    """
+    return np.mean(positionErrorMm), np.mean(angleErrorDeg)
 
-    if not self.isValidInputOutputData(inputVolume, outputVolume):
-      slicer.util.errorDisplay('Input volume is the same as output volume. Choose a different output volume.')
-      return False
+  def getOpPointerToEmPointerFromSingleSample(self, sampleIndex):
+    emPointerToEmTracker = self.emPointerToEmTrackerTransformArray[sampleIndex]
+    opRefToEmTracker = np.linalg.inv(self.initialEmTrackerToOpRefTransform)
+    opPointerToOpRef = self.opPointerToOpRefTransformArray[sampleIndex]
+    opPointerToEmPointerComputed = np.dot(np.linalg.inv(emPointerToEmTracker),np.dot(opRefToEmTracker,opPointerToOpRef))
+    return opPointerToEmPointerComputed
 
-    logging.info('Processing started')
+  def transformSolveAX_B(self, Aarray, Barray):
+    # Solves least squares to find the transformation X such that AX=B
+    A = np.vstack(Aarray)
+    B = np.vstack(Barray)
 
-    # Compute the thresholded output volume using the Threshold Scalar Volume CLI module
-    cliParams = {'InputVolume': inputVolume.GetID(), 'OutputVolume': outputVolume.GetID(), 'ThresholdValue' : imageThreshold, 'ThresholdType' : 'Above'}
-    cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True)
+    Rb = B[:,0:3]
+    Ra = A[:,0:3]
+    Rx = np.linalg.lstsq(Ra,Rb)[0]
+    Rx = self.orthonormalize3x3(Rx) # Maintain orthogonality
 
-    # Capture screenshot
-    if enableScreenshots:
-      self.takeScreenshot('DualModalityCalibrationTest-Start','MyScreenshot',-1)
+    Pb = B[:,3]
+    Pa = A[:,3]
+    Px = np.linalg.lstsq(Ra,Pb-Pa)[0]
 
-    logging.info('Processing completed')
+    X = np.identity(4)
+    X[0:3,0:3] = Rx
+    X[0:3,3] = Px
 
-    return True
+    return X
 
+  def lstsqLeft(self,A,B):
+    # Solves XA=B using AX=B
+    # X * A = B
+    # A.T * X.T = B.T
+    xT = np.linalg.lstsq(A.T,B.T)[0]
+    return xT.T
+
+  def transformSolveXA_B(self, Aarray, Barray):
+    # Solves least squares to find the transformation X such that XA=B
+
+    #Rb = B(:,1:3); Rb(4:4:end,:) = []; Rb = C2R(Rb);
+    #Ra = A(:,1:3); Ra(4:4:end,:) = []; Ra = C2R(Ra);
+    Rb = np.hstack(Barray[:,0:3,0:3])
+    Ra = np.hstack(Aarray[:,0:3,0:3])
+    #Rx = Rb/Ra;
+    Rx = self.lstsqLeft(Ra, Rb)
+    Rx = self.orthonormalize3x3(Rx) # Maintain orthogonality
+
+    #Pb = reshape(B(:,4),4,[]); Pb = Pb(1:3,:);
+    #Pa = reshape(A(:,4),4,[]); Pa = Pa(1:3,:);
+    Pb = Barray[:,0:3,3].T # position vector columns stacked horizontally next to each other
+    Pa = Aarray[:,0:3,3].T
+    #Px = Pb-Rx*Pa; Px = mean(Px')';
+    #Px = Pb-np.asmatrix(Rx)*np.asmatrix(Pa)
+    Px = Pb-np.dot(Rx,Pa)
+    Px = np.mean(Px,1)
+
+    X = np.identity(4)
+    X[0:3,0:3] = Rx
+    X[0:3,3] = Px
+
+    return X
+
+  def multiplyTransformArrayByTransformFromLeft(self, transform, transformArray):
+    numberOfTransforms = np.shape(transformArray)[0]
+    output = np.zeros(np.shape(transformArray))
+    for transformIndex in range(numberOfTransforms):
+      output[transformIndex] = np.dot(transform, transformArray[transformIndex])
+    return output
+
+  def multiplyTransformArrayByTransformFromRight(self, transformArray, transform):
+    numberOfTransforms = np.shape(transformArray)[0]
+    output = np.zeros(np.shape(transformArray))
+    for transformIndex in range(numberOfTransforms):
+      output[transformIndex] = np.dot(transformArray[transformIndex], transform)
+    return output
+
+  def calculateCalibrationOutput(self):
+    # OpRefToEmTracker * OpPointerToOpRef = EmPointerToEmTracker * OpPointerToEmPointer
+
+    logging.info("------- DualModalityCalibration --------")
+
+    # From initial guess:
+    opRefToEmTracker = np.linalg.inv(self.initialEmTrackerToOpRefTransform)
+
+    # Compute calibration matrices from the first sample to get a baseline (results that we would get without calibration)
+    A = np.expand_dims(self.emPointerToEmTrackerTransformArray[0],0)
+    b = self.multiplyTransformArrayByTransformFromLeft(opRefToEmTracker, np.expand_dims(self.opPointerToOpRefTransformArray[0],0))
+    opPointerToEmPointer = self.transformSolveAX_B(A,b)
+    positionOrientationError = self.calculateCalibrationError(opPointerToEmPointer, opRefToEmTracker)
+    logging.info("Initial error (from first sample, without iteration): Position and orientation error: {0}".format(positionOrientationError))
+    opRefToEmTrackerInitial = opRefToEmTracker
+    opPointerToEmPointerInitial = opPointerToEmPointer
+
+    for iterationIndex in range(20):
+
+        # (OpRefToEmTracker * OpPointerToOpRef) = (EmPointerToEmTracker) * OpPointerToEmPointer
+        #                  b                    =           A                       x
+
+        A = self.emPointerToEmTrackerTransformArray
+        b = self.multiplyTransformArrayByTransformFromLeft(opRefToEmTracker, self.opPointerToOpRefTransformArray)
+        opPointerToEmPointer = self.transformSolveAX_B(A,b)
+
+        positionOrientationError = self.calculateCalibrationError(opPointerToEmPointer, opRefToEmTracker)
+        logging.info("Iteration: {0},   after first LSQR, before orthonormalization - Position and orientation error: {1}".format(iterationIndex, positionOrientationError))
+
+        opPointerToEmPointer = self.orthonormalize(opPointerToEmPointer)
+
+        positionOrientationError = self.calculateCalibrationError(opPointerToEmPointer, opRefToEmTracker)
+        logging.info("Iteration: {0},   after first LSQR,  after orthonormalization - Position and orientation error: {1}".format(iterationIndex, positionOrientationError))
+
+        ###############################################
+
+        # OpRefToEmTracker * OpPointerToOpRef = EmPointerToEmTracker * OpPointerToEmPointer
+        #    (unknown mx)  *   (mx array)     =     (mx array)       *     (known mx)
+        #         x                A                                 B
+        A = self.opPointerToOpRefTransformArray
+        b = self.multiplyTransformArrayByTransformFromRight(self.emPointerToEmTrackerTransformArray, opPointerToEmPointer)
+        opRefToEmTracker = self.transformSolveXA_B(A,b)
+
+        positionOrientationError = self.calculateCalibrationError(opPointerToEmPointer, opRefToEmTracker)
+        logging.info("Iteration: {0},  after second LSQR, before orthonormalization - Position and orientation error: {1}".format(iterationIndex, positionOrientationError))
+
+        opRefToEmTracker = self.orthonormalize(opRefToEmTracker)
+
+        positionOrientationError = self.calculateCalibrationError(opPointerToEmPointer, opRefToEmTracker)
+        logging.info("Iteration: {0},  after second LSQR,  after orthonormalization - Position and orientation error: {1}".format(iterationIndex, positionOrientationError))
+
+    self.calibrationErrorTranslationMm = positionOrientationError[0]
+    self.calibrationErrorRotationDeg = positionOrientationError[1]
+        
+    logging.info("opRefToEmTracker (initial guess):\n  "+repr(opRefToEmTrackerInitial))
+    logging.info("opPointerToEmPointer (initial computation):\n  "+repr(opPointerToEmPointerInitial))
+
+    logging.info("opRefToEmTracker (final):\n  "+repr(opRefToEmTracker))
+    logging.info("opPointerToEmPointer (final):\n  "+repr(opPointerToEmPointer))
+
+    emTrackerToOpRef = np.linalg.inv(opRefToEmTracker)
+    emPointerToOpPointer = np.linalg.inv(opPointerToEmPointer)
+
+    emTrackerToOpRefVTKMatrix = self.vtkMatrixFromArray(emTrackerToOpRef)
+    emPointerToOpPointerVTKMatrix = self.vtkMatrixFromArray(emPointerToOpPointer)  
+    
+    # Save results to output nodes
+    
+    if self.outputEmTrackerToOpRefNode:
+      self.outputEmTrackerToOpRefNode.SetMatrixTransformToParent(emTrackerToOpRefVTKMatrix)
+
+    if self.outputEmPointerToOpPointerNode:
+      self.outputEmPointerToOpPointerNode.SetMatrixTransformToParent(emPointerToOpPointerVTKMatrix)
+
+    self.reportStatus(self.CALIBRATION_COMPLETE,100)
 
 class DualModalityCalibrationTest(ScriptedLoadableModuleTest):
   """
