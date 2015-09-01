@@ -11,10 +11,6 @@ import math
 #
 
 class DualModalityCalibration(ScriptedLoadableModule):
-  """Uses ScriptedLoadableModule base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
-
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
     self.parent.title = "Dual Modality Calibration "
@@ -26,18 +22,14 @@ class DualModalityCalibration(ScriptedLoadableModule):
     #self.logic = DualModalityCalibrationLogic
 
 #
-# DualModalityCalibrationWidget
+# qDualModalityCalibrationWidget
 #
 
 class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
-  """Uses ScriptedLoadableModuleWidget base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
-
   def setup(self):
-    ScriptedLoadableModuleWidget.setup(self)
     self.developerMode = True
     self.logic = DualModalityCalibrationLogic()
+    ScriptedLoadableModuleWidget.setup(self)
 
     # Instantiate and connect widgets
 
@@ -132,7 +124,7 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     emPointerGtruthToOpPointerOutputNode = slicer.util.getNode('EmPointerGtruthToOpPointer')
     if emPointerGtruthToOpPointerOutputNode:
         self.outputEmPointerGtruthToOpPointerTransformSelector.setCurrentNode(emPointerGtruthToOpPointerOutputNode)
-        
+
     #
     # Controls Area
     #
@@ -209,43 +201,30 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     self.transErrorLabel = qt.QLabel("Position error: N/A")
     self.rotErrorLabel = qt.QLabel("Orientation error: N/A")
     displayFormLayout.addRow(self.transErrorLabel, self.rotErrorLabel)
-    #
-    # Save results to config file
-    #
-    self.filenameLabel = qt.QLabel()
-    self.filenameLabel.setText("Filename: ")
-    self.filenameInput = qt.QLineEdit()
-    self.filenameInput.placeholderText = ""
-    self.filenameInput.setToolTip("Select the config flie to save to")
-    self.writeConfigButton = qt.QPushButton("Write to PLUS config file")
-    self.writeConfigButton.toolTip = "Save output transforms to PLUS config file"
-    self.writeConfigButton.enabled = True
-    displayFormLayout.addRow(self.filenameLabel, self.filenameInput)
-    displayFormLayout.addRow(self.writeConfigButton)
-
+    
     # Add vertical spacer
     self.layout.addStretch(1)
 
   def logicStatusCallback(self, statusCode, percentageCompleted):
     """This method is called by the logic to report progress"""
-    
+
     if statusCode == self.logic.CALIBRATION_COMPLETE:
       self.transErrorLabel.setText("Position error: {0:.3f} mm".format(self.logic.calibrationErrorTranslationMm))
       self.rotErrorLabel.setText("Orientation error: {0:.3f} deg".format(self.logic.calibrationErrorRotationDeg))
     else:
       self.transErrorLabel.setText("Position error: N/A")
       self.rotErrorLabel.setText("Orientation error: N/A")
-      
+
     if statusCode == self.logic.CALIBRATION_COMPLETE:
       self.collectionProgressBar.setValue(100)
     elif statusCode == self.logic.CALIBRATION_IN_PROGRESS:
       self.collectionProgressBar.setValue(percentageCompleted)
     else:
       self.collectionProgressBar.setValue(0)
-      
+
     # Refresh the screen
     slicer.app.processEvents()
-    
+
   def onStartDataCollection(self, moduleName="DualModalityCalibration"):
     logging.debug("onStartDataCollection")
     self.logic.statusCallback = self.logicStatusCallback
@@ -257,19 +236,9 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     self.logic.removeObservers()
 
 #
-# DualModalityCalibrationLogic
+# DualModalityCalibration Logic
 #
-
 class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
-  """This class should implement all the actual
-  computation done by your module.  The interface
-  should be such that other python code can import
-  this class and make use of the functionality without
-  requiring an instance of the Widget.
-  Uses ScriptedLoadableModuleLogic base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
-
   def __init__(self):
 
      # Observed transform nodes
@@ -289,10 +258,10 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
 
      # Output
      self.emPointerToOpPointer = None
-     
+
      self.calibrationErrorTranslationMm = None
      self.calibrationErrorRotationDeg = None
-     
+
      self.statusCallback = None
      self.CALIBRATION_NOT_STARTED = 0
      self.CALIBRATION_IN_PROGRESS = 1
@@ -328,7 +297,7 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
   def reportStatus(self, statusCode, percentageCompleted):
     if self.statusCallback:
       self.statusCallback(statusCode, percentageCompleted)
-      
+
   def startDataCollection(self, numberOfDataPointsToCollect, emPointerToEmTrackerNode, opPointerToOpRefNode, initialEmTrackerToOpRefTransformNode, \
   emTrackerToOpRefNode, emPointerToOpPointerNode):
       self.removeObservers()
@@ -350,7 +319,7 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
       self.emPointerToEmTrackerTransformArray = np.zeros((self.numberOfDataPointsToCollect,4,4))
 
       self.addObservers()
-      
+
       self.reportStatus(self.CALIBRATION_IN_PROGRESS,0)
 
   #Since optical tracking is our ground truth we only want to query both transform nodes when the optical node is changing
@@ -382,7 +351,7 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
       self.emPointerToEmTrackerTransformArray[self.numberDataPointsCollected] = self.arrayFromVtkMatrix(emPointerToEmTrackerVtkMatrix)
 
       self.numberDataPointsCollected = self.numberDataPointsCollected + 1
-      
+
       if self.numberDataPointsCollected % 10 == 0: # report status after every 10th point to avoid too frequent screen updates
         self.reportStatus(self.CALIBRATION_IN_PROGRESS,100*self.numberDataPointsCollected/self.numberOfDataPointsToCollect)
 
@@ -592,7 +561,7 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
 
     self.calibrationErrorTranslationMm = positionOrientationError[0]
     self.calibrationErrorRotationDeg = positionOrientationError[1]
-        
+
     logging.info("opRefToEmTracker (initial guess):\n  "+repr(opRefToEmTrackerInitial))
     logging.info("opPointerToEmPointer (initial computation):\n  "+repr(opPointerToEmPointerInitial))
 
@@ -603,10 +572,10 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
     emPointerToOpPointer = np.linalg.inv(opPointerToEmPointer)
 
     emTrackerToOpRefVTKMatrix = self.vtkMatrixFromArray(emTrackerToOpRef)
-    emPointerToOpPointerVTKMatrix = self.vtkMatrixFromArray(emPointerToOpPointer)  
-    
+    emPointerToOpPointerVTKMatrix = self.vtkMatrixFromArray(emPointerToOpPointer)
+
     # Save results to output nodes
-    
+
     if self.outputEmTrackerToOpRefNode:
       self.outputEmTrackerToOpRefNode.SetMatrixTransformToParent(emTrackerToOpRefVTKMatrix)
 
@@ -614,57 +583,3 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
       self.outputEmPointerToOpPointerNode.SetMatrixTransformToParent(emPointerToOpPointerVTKMatrix)
 
     self.reportStatus(self.CALIBRATION_COMPLETE,100)
-
-class DualModalityCalibrationTest(ScriptedLoadableModuleTest):
-  """
-  This is the test case for your scripted module.
-  Uses ScriptedLoadableModuleTest base class, available at:
-  https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
-  """
-
-  def setUp(self):
-    """ Do whatever is needed to reset the state - typically a scene clear will be enough.
-    """
-    slicer.mrmlScene.Clear(0)
-
-  def runTest(self):
-    """Run as few or as many tests as needed here.
-    """
-    self.setUp()
-    self.test_DualModalityCalibration1()
-
-  def test_DualModalityCalibration1(self):
-    """ Ideally you should have several levels of tests.  At the lowest level
-    tests should exercise the functionality of the logic with different inputs
-    (both valid and invalid).  At higher levels your tests should emulate the
-    way the user would interact with your code and confirm that it still works
-    the way you intended.
-    One of the most important features of the tests is that it should alert other
-    developers when their changes will have an impact on the behavior of your
-    module.  For example, if a developer removes a feature that you depend on,
-    your test should break so they know that the feature is needed.
-    """
-
-    self.delayDisplay("Starting the test")
-    #
-    # first, get some data
-    #
-    import urllib
-    downloads = (
-        ('http://slicer.kitware.com/midas3/download?items=5767', 'FA.nrrd', slicer.util.loadVolume),
-        )
-
-    for url,name,loader in downloads:
-      filePath = slicer.app.temporaryPath + '/' + name
-      if not os.path.exists(filePath) or os.stat(filePath).st_size == 0:
-        logging.info('Requesting download %s from %s...\n' % (name, url))
-        urllib.urlretrieve(url, filePath)
-      if loader:
-        logging.info('Loading %s...' % (name,))
-        loader(filePath)
-    self.delayDisplay('Finished with download and loading')
-
-    volumeNode = slicer.util.getNode(pattern="FA")
-    logic = DualModalityCalibrationLogic()
-    self.assertTrue( logic.hasImageData(volumeNode) )
-    self.delayDisplay('Test passed!')
