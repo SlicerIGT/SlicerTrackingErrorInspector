@@ -18,11 +18,13 @@ class DualModalityCalibration(ScriptedLoadableModule):
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
     self.parent.title = "Dual Modality Calibration "
-    self.parent.categories = ["IGT"]
+    self.parent.categories = ["Tracking Error Inspector"]
     self.parent.dependencies = []
     self.parent.contributors = ["Vinyas Harish, Andras Lasso (PerkLab, Queen's)"]
     self.parent.helpText = "This is a simple example of how to calibrate two tracking systems for use in mapping position tracking error."
     self.parent = parent
+    self.parent.acknowledgementText = "This work was was funded by Cancer Care Ontario, the Ontario Consortium for Adaptive Interventions in Radiation Oncology (OCAIRO) \
+    and the Summer Work Experience Program (SWEP) at Queen's Unversity."
     #self.logic = DualModalityCalibrationLogic
 
 #
@@ -36,7 +38,6 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
 
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
-    self.developerMode = True
     self.logic = DualModalityCalibrationLogic()
 
     # Instantiate and connect widgets
