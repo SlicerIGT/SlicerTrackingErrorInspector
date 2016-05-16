@@ -20,11 +20,11 @@ class DualModalityCalibration(ScriptedLoadableModule):
     self.parent.title = "Dual Modality Calibration "
     self.parent.categories = ["Tracking Error Inspector"]
     self.parent.dependencies = []
-    self.parent.contributors = ["Vinyas Harish, Andras Lasso (PerkLab, Queen's)"]
+    self.parent.contributors = ["Vinyas Harish, Aidan Baksh, Andras Lasso (PerkLab, Queen's)"]
     self.parent.helpText = "This is a simple example of how to calibrate two tracking systems for use in mapping position tracking error."
     self.parent = parent
     self.parent.acknowledgementText = "This work was was funded by Cancer Care Ontario, the Ontario Consortium for Adaptive Interventions in Radiation Oncology (OCAIRO) \
-    and the Summer Work Experience Program (SWEP) at Queen's Unversity."
+    the Queen's University Internships in Computing (QUIC), and the Summer Work Experience Program (SWEP) at Queen's Unversity."
     #self.logic = DualModalityCalibrationLogic
 
 #
@@ -158,7 +158,7 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     #self.numberDataPoints = self.numberDataPointsInput.value
 
     #
-    # Delay slider
+    # Delay spinbox
     #
     self.delaySelectorLabel = qt.QLabel()
     self.delaySelectorLabel.setText("Delay (seconds):")
@@ -180,6 +180,7 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     #
     # Delay countdown timer
     #
+    self.delayTimer = qt.QTimer()
     self.delayTimerLabel = qt.QLabel()
     self.delayTimerLabel.setText("Time before data collection begins:  ____ seconds")
     controlsFormLayout.addRow(self.delayTimerLabel)

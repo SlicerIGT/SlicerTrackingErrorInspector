@@ -19,10 +19,10 @@ class TrackingErrorMapping(ScriptedLoadableModule):
     parent.title = "Tracking Error Mapping"
     parent.categories = ["Tracking Error Inspector"]
     parent.dependencies = []
-    parent.contributors = ["Andras Lasso (PerkLab, Queen's), Vinyas Harish (PerkLab, Queen's)"]
+    parent.contributors = ["Andras Lasso, Vinyas Harish, Aidan Baksh (PerkLab, Queen's)"]
     parent.helpText = "This is a simple example of using two trackers for mapping of the position tracking error. One of the trackers is used as ground truth and the other one is compared to that."
     parent.acknowledgementText = "This work was was funded by Cancer Care Ontario, the Ontario Consortium for Adaptive Interventions in Radiation Oncology (OCAIRO) \
-    and the Summer Work Experience Program (SWEP) at Queen's Unversity." 
+    the Queen's University Internships in Computing (QUIC), and the Summer Work Experience Program (SWEP) at Queen's Unversity."
 
 #
 # TrackingErrorMappingWidget
