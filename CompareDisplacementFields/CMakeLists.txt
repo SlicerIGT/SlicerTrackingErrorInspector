@@ -9,6 +9,7 @@ set(MODULE_PYTHON_SCRIPTS
 set(MODULE_PYTHON_RESOURCES
   Resources/Icons/${MODULE_NAME}.png
   )
+  #Icon obtained from:  https://commons.wikimedia.org/wiki/File:Balanced_scales.svg 
 
 #-----------------------------------------------------------------------------
 slicerMacroBuildScriptedModule(
