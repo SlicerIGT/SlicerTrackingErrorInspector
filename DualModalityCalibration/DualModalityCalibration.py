@@ -5,6 +5,7 @@ from slicer.ScriptedLoadableModule import *
 import numpy as np
 import logging
 import math
+import time
 
 #
 # DualModalityCalibration
@@ -165,6 +166,7 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     self.delaySelector = qt.QSpinBox()
     self.delaySelector.minimum = 1
     self.delaySelector.maximum = 10
+    self.delaySelector.value = 5
     self.delaySelector.setToolTip("Time to wait before starting data collection after clicking 'Start data collection' button")
     controlsFormLayout.addRow(self.delaySelectorLabel, self.delaySelector)
 
@@ -182,7 +184,9 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     #
     self.delayTimer = qt.QTimer()
     self.delayTimerLabel = qt.QLabel()
-    self.delayTimerLabel.setText("Time before data collection begins:  ____ seconds")
+    self.delayTimer.setInterval(1000) # 1 second
+    self.delayTimer.setSingleShot(True)
+    self.delayTimer.connect('timeout()',self.onDelayTimerTimeout)
     controlsFormLayout.addRow(self.delayTimerLabel)
 
     #
@@ -190,9 +194,7 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     #
     self.collectionProgressBar = qt.QProgressBar()
     self.collectionProgressBar.setRange(0,100)
-    #self.collectionProgressBarLabel = qt.QLabel()
-    #self.collectionProgressBarLabel.setText("__% complete")
-    #controlsFormLayout.addRow(self.collectionProgressBarLabel, self.collectionProgressBar)
+    self.collectionProgressBar.setVisible(False)
     controlsFormLayout.addRow(self.collectionProgressBar)
 
     #
@@ -210,7 +212,8 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     #
     self.transErrorLabel = qt.QLabel("Position error: N/A")
     self.rotErrorLabel = qt.QLabel("Orientation error: N/A")
-    displayFormLayout.addRow(self.transErrorLabel, self.rotErrorLabel)
+    displayFormLayout.addRow(self.transErrorLabel)
+    displayFormLayout.addRow(self.rotErrorLabel)
 
     # Add vertical spacer
     self.layout.addStretch(1)
@@ -219,27 +222,46 @@ class DualModalityCalibrationWidget(ScriptedLoadableModuleWidget):
     """This method is called by the logic to report progress"""
 
     if statusCode == self.logic.CALIBRATION_COMPLETE:
-      self.transErrorLabel.setText("Position error: {0:.3f} mm".format(self.logic.calibrationErrorTranslationMm))
-      self.rotErrorLabel.setText("Orientation error: {0:.3f} deg".format(self.logic.calibrationErrorRotationDeg))
+        self.transErrorLabel.setText("Position error: {0:.3f} mm".format(self.logic.calibrationErrorTranslationMm))
+        self.rotErrorLabel.setText("Orientation error: {0:.3f} deg".format(self.logic.calibrationErrorRotationDeg))
     else:
-      self.transErrorLabel.setText("Position error: N/A")
-      self.rotErrorLabel.setText("Orientation error: N/A")
+        self.transErrorLabel.setText("Position error: N/A")
+        self.rotErrorLabel.setText("Orientation error: N/A")
 
     if statusCode == self.logic.CALIBRATION_COMPLETE:
-      self.collectionProgressBar.setValue(100)
+        self.collectionProgressBar.setValue(100)
+        self.collectionProgressBar.setVisible(False)
+        self.delayTimerLabel.setText("Calibration complete.")
     elif statusCode == self.logic.CALIBRATION_IN_PROGRESS:
-      self.collectionProgressBar.setValue(percentageCompleted)
+        self.collectionProgressBar.setVisible(True)
+        self.collectionProgressBar.setValue(percentageCompleted)
+        self.delayTimerLabel.setText("Collecting data...")
     else:
-      self.collectionProgressBar.setValue(0)
+        self.collectionProgressBar.setValue(0)
+        self.collectionProgressBar.setVisible(False)
 
     # Refresh the screen
     slicer.app.processEvents()
 
   def onStartDataCollection(self, moduleName="DualModalityCalibration"):
-    logging.debug("onStartDataCollection")
+    self.delayDuration = self.delaySelector.value
+    self.delayTimerStopTime = time.time() + float(self.delayDuration)
+    self.onDelayTimerTimeout()
+
+  def onDelayTimerTimeout(self, moduleName="DualModalityCalibration"):
+    self.delayTimerLabel.setText("Time remaining before data collection begins: {0:.0f} seconds".format(self.delayTimerStopTime - time.time()))
+    if (time.time()<self.delayTimerStopTime):
+        # Continue
+        self.delayTimer.start()
+    else:
+        # Delay over
+        self.startDataCollection()
+
+  def startDataCollection(self, moduleName="DualModalityCalibration"):
+    logging.debug("Start Data Collection")
     self.logic.statusCallback = self.logicStatusCallback
     self.logic.startDataCollection(self.numberDataPointsInput.value, self.emPointerSelector.currentNode(),self.opticalPointerSelector.currentNode(), \
-     self.initialEmTrackerToOpRefSelector.currentNode(),self.outputEmTrackerToOpRefTransformSelector.currentNode() ,self.outputEmPointerGtruthToOpPointerTransformSelector.currentNode())
+    self.initialEmTrackerToOpRefSelector.currentNode(),self.outputEmTrackerToOpRefTransformSelector.currentNode() ,self.outputEmPointerGtruthToOpPointerTransformSelector.currentNode())
 
   def cleanup(self):
     logging.debug("DualModalityCalibration cleanup")
@@ -261,31 +283,31 @@ class DualModalityCalibrationLogic(ScriptedLoadableModuleLogic):
 
   def __init__(self):
 
-     # Observed transform nodes
-     self.opPointerToOpRefNode = None
-     self.emPointerToEmTrackerNode = None
-     self.transformNodeObserverTags = []
+    # Observed transform nodes
+    self.opPointerToOpRefNode = None
+    self.emPointerToEmTrackerNode = None
+    self.transformNodeObserverTags = []
 
-     # Input parameters
-     self.initialEmTrackerToOpRefTransform = None
-     self.numberOfDataPointsToCollect = 20
+    # Input parameters
+    self.initialEmTrackerToOpRefTransform = None
+    self.numberOfDataPointsToCollect = 20
 
-     # Collected data
-     self.numberDataPointsCollected = 0
-     self.opPointerToOpRefTransformArray = np.zeros((0,4,4))
-     self.emPointerToEmTrackerTransformArray = np.zeros((0,4,4))
-     self.lastUpdateTimeSec = 0
+    # Collected data
+    self.numberDataPointsCollected = 0
+    self.opPointerToOpRefTransformArray = np.zeros((0,4,4))
+    self.emPointerToEmTrackerTransformArray = np.zeros((0,4,4))
+    self.lastUpdateTimeSec = 0
 
-     # Output
-     self.emPointerToOpPointer = None
+    # Output
+    self.emPointerToOpPointer = None
 
-     self.calibrationErrorTranslationMm = None
-     self.calibrationErrorRotationDeg = None
+    self.calibrationErrorTranslationMm = None
+    self.calibrationErrorRotationDeg = None
 
-     self.statusCallback = None
-     self.CALIBRATION_NOT_STARTED = 0
-     self.CALIBRATION_IN_PROGRESS = 1
-     self.CALIBRATION_COMPLETE = 2
+    self.statusCallback = None
+    self.CALIBRATION_NOT_STARTED = 0
+    self.CALIBRATION_IN_PROGRESS = 1
+    self.CALIBRATION_COMPLETE = 2
 
   def addObservers(self):
       transformModifiedEvent = slicer.vtkMRMLLinearTransformNode.TransformModifiedEvent
