@@ -249,12 +249,12 @@ class TrackingErrorMappingLogic(ScriptedLoadableModuleLogic):
     transformModifiedEvent = 15000
     transformNode = self.groundTruthTransformNode
     while transformNode:
-      print "Add observer to {0}".format(transformNode.GetName())
+      logging.debug(f"Add observer to {transformNode.GetName()}")
       self.transformNodeObserverTags.append([transformNode, transformNode.AddObserver(transformModifiedEvent, self.onGroundTruthTransformNodeModified)])
       transformNode = transformNode.GetParentTransformNode()
 
   def removeObservers(self):
-    print "Remove observers"
+    logging.debug("Remove observers")
     for nodeTagPair in self.transformNodeObserverTags:
       nodeTagPair[0].RemoveObserver(nodeTagPair[1])
 
@@ -345,8 +345,8 @@ class TrackingErrorMappingLogic(ScriptedLoadableModuleLogic):
 
     self.positionErrorMappingWidget.errorOrientationValueLabel.setText("{0:.3f} (MAD)".format(np.mean(self.orientationErrorMagnitudeList)))
 
-    print("positionError = "+repr(self.positionErrorMagnitudeList)+";")
-    print("orientationError = "+repr(self.orientationErrorMagnitudeList)+";")
+    print(f"positionError = {self.positionErrorMagnitudeList};")
+    print(f"orientationError = {self.orientationErrorMagnitudeList};")
 
     percentiles = [5, 25, 50, 75, 95]
     positionPercentiles = self.percentile(self.positionErrorMagnitudeList, percentiles)
