@@ -179,7 +179,7 @@ class TrackingErrorMappingWidget(ScriptedLoadableModuleWidget):
     self.exportRoiSelectorLabel = qt.QLabel()
     self.exportRoiSelectorLabel.setText( "Region of interest: " )
     self.exportRoiSelector = slicer.qMRMLNodeComboBox()
-    self.exportRoiSelector.nodeTypes = ( "vtkMRMLAnnotationROINode", "" )
+    self.exportRoiSelector.nodeTypes = ["vtkMRMLMarkupsROINode", "vtkMRMLAnnotationROINode"]
     self.exportRoiSelector.noneEnabled = False
     self.exportRoiSelector.addEnabled = False
     self.exportRoiSelector.removeEnabled = True
@@ -422,6 +422,7 @@ class TrackingErrorMappingLogic(ScriptedLoadableModuleLogic):
     if not positionErrorVectorTransform:
       return
 
+    # Rotated ROIs are not supported yet, just use the non-rotated (RAS coordinate system axes aligned) bounding box
     roiBounds_Ras = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     exportRoi.GetRASBounds(roiBounds_Ras)
     exportVolumeSize = [(roiBounds_Ras[1]-roiBounds_Ras[0]+1)/self.exportVolumeSpacingMm, (roiBounds_Ras[3]-roiBounds_Ras[2]+1)/self.exportVolumeSpacingMm, (roiBounds_Ras[5]-roiBounds_Ras[4]+1)/self.exportVolumeSpacingMm]

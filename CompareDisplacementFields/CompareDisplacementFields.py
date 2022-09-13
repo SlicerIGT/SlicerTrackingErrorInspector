@@ -52,7 +52,7 @@ class CompareDisplacementFieldsWidget(ScriptedLoadableModuleWidget):
     self.roiSelectorLabel = qt.QLabel()
     self.roiSelectorLabel.setText( "Region of interest: " )
     self.exportRoiSelector = slicer.qMRMLNodeComboBox()
-    self.exportRoiSelector.nodeTypes = ( "vtkMRMLAnnotationROINode", "" )
+    self.exportRoiSelector.nodeTypes = ["vtkMRMLMarkupsROINode", "vtkMRMLAnnotationROINode"]
     self.exportRoiSelector.noneEnabled = False
     self.exportRoiSelector.addEnabled = False
     self.exportRoiSelector.removeEnabled = True
@@ -224,28 +224,32 @@ class CompareDisplacementFieldsLogic(ScriptedLoadableModuleLogic):
     self.ReferenceVolumeSpacingMm = 3.0
 
   def createVectorVolumeFromRoi(self, exportRoi, spacingMm, numberOfComponents=3):
-    roiCenter = [0, 0, 0]
-    exportRoi.GetXYZ( roiCenter )
-    roiRadius = [0, 0, 0]
-    exportRoi.GetRadiusXYZ( roiRadius )
-    roiOrigin_Roi = [roiCenter[0] - roiRadius[0], roiCenter[1] - roiRadius[1], roiCenter[2] - roiRadius[2], 1 ]
 
-    roiToRas = vtk.vtkMatrix4x4()
-    if exportRoi.GetTransformNodeID() != None:
-      roiBoxTransformNode = slicer.mrmlScene.GetNodeByID(exportRoi.GetTransformNodeID())
-      roiBoxTransformNode.GetMatrixTransformToWorld(roiToRas)
+    if exportRoi.IsA("vtkMRMLMarkupsROINode"):
+      # Markups ROI node
+      roiDiameter = exportRoi.GetSize()
+      roiOrigin_Roi = [-roiDiameter[0]/2, -roiDiameter[1]/2, -roiDiameter[2]/2, 1 ]
+      roiToRas = exportRoi.GetObjectToWorldMatrix()
+      exportVolumeSize = [int(math.ceil(diameterComponent/spacingMm)) for diameterComponent in roiDiameter]
+    else:
+      # Legacy Annotation ROI node
+      roiCenter = [0, 0, 0]
+      exportRoi.GetXYZ( roiCenter )
+      roiRadius = [0, 0, 0]
+      exportRoi.GetRadiusXYZ( roiRadius )
+      roiOrigin_Roi = [roiCenter[0] - roiRadius[0], roiCenter[1] - roiRadius[1], roiCenter[2] - roiRadius[2], 1 ]
 
-    exportVolumeSize = [roiRadius[0]*2/spacingMm, roiRadius[1]*2/spacingMm, roiRadius[2]*2/spacingMm]
-    exportVolumeSize = [int(math.ceil(x)) for x in exportVolumeSize]
+      roiToRas = vtk.vtkMatrix4x4()
+      if exportRoi.GetTransformNodeID() != None:
+        roiBoxTransformNode = slicer.mrmlScene.GetNodeByID(exportRoi.GetTransformNodeID())
+        roiBoxTransformNode.GetMatrixTransformToWorld(roiToRas)
+
+      exportVolumeSize = [roiRadius[0]*2/spacingMm, roiRadius[1]*2/spacingMm, roiRadius[2]*2/spacingMm]
+      exportVolumeSize = [int(math.ceil(x)) for x in exportVolumeSize]
 
     exportImageData = vtk.vtkImageData()
     exportImageData.SetExtent(0, exportVolumeSize[0]-1, 0, exportVolumeSize[1]-1, 0, exportVolumeSize[2]-1)
-    if vtk.VTK_MAJOR_VERSION <= 5:
-      exportImageData.SetScalarType(vtk.VTK_DOUBLE)
-      exportImageData.SetNumberOfScalarComponents(numberOfComponents)
-      exportImageData.AllocateScalars()
-    else:
-      exportImageData.AllocateScalars(vtk.VTK_DOUBLE, numberOfComponents)
+    exportImageData.AllocateScalars(vtk.VTK_DOUBLE, numberOfComponents)
 
     exportVolume = None
     if numberOfComponents==1:
