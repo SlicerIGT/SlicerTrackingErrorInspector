@@ -66,7 +66,7 @@ Here's a quick start guide to using the EM Sensor Accuracy module:
 Create 2 coordiate models, OpPointerTip and EmPointerTip. Then Create 2 Transforms, OpPointerTipToOpPointer and EmPointerTipToEmPointer.
 
 Now within the data module organize the hierarcy like this:
-![Data organization](SlicerTrackingErrorInspector/TrackingErrorIsosurface/data_hierarcy.jpg)
+![Data organization](data_hierarcy.jpg)
 
 EmPointerToOpRef is not yet determined, but before we find we we must perform a pivot calibration on the OpPointerTipToOpPointer and the EmPointerTipToEmPointer. Then we will use the regestration wizard to find the points from the EmPointer To the OpRef.
 
